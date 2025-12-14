@@ -4,7 +4,7 @@ import sys
 
 # --- Konfigurasi Anda ---
 # GANTI DENGAN KUNCI API YANG SUDAH ANDA SALIN DI LANGKAH 1
-API_KEY = "AIzaSyAC8evEZW6_JlSRj7JujGPe-7n85lZ4KZg" 
+
 # ID Video (KOMPAS.TV) tentang penangkapan Gubernur Riau
 VIDEO_ID = "9WquMr6mBCs"
 MAX_COMMENTS = 500 
