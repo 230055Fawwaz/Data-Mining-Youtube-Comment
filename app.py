@@ -3,57 +3,91 @@ import pandas as pd
 import os
 import joblib
 import matplotlib.pyplot as plt 
-import seaborn as sns # Pastikan library ini diimport
-import sys # Digunakan untuk error reporting jika diperlukan
+import sys
+import re
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
+from nltk.sentiment.vader import SentimentIntensityAnalyzer # Diperlukan untuk setup SIA
 
-# --- 1. IMPORT MODUL CUSTOM ---
-# Pastikan file ml_trainer.py dan preprocessing.py berada di direktori yang sama
+# --- IMPORT MODUL CUSTOM (BARU) ---
 try:
-    import ml_trainer 
-    import preprocessing 
+    import vader_labeler
 except ImportError as e:
-    st.error(f"Error saat mengimpor modul kustom: {e}. Pastikan ml_trainer.py dan preprocessing.py ada.")
+    st.error(f"Error saat mengimpor modul 'vader_labeler.py': {e}. Pastikan file ada.")
+    st.stop()
 
 
-# --- KONFIGURASI APLIKASI ---
-st.set_page_config(
-    page_title="Analisis Sentimen Naive Bayes",
-    layout="wide"
-)
+# --- 1. SETUP LINGKUNGAN NLTK & PRE-PROCESSING ---
+@st.cache_resource
+def setup_nltk_and_vader():
+    """Mengunduh resource NLTK dan menyiapkan VADER/SIA."""
+    resources = ['punkt', 'stopwords', 'vader_lexicon', 'wordnet']
+    for resource in resources:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+        except LookupError:
+            try:
+                nltk.download(resource, quiet=True)
+            except Exception as e:
+                return f"Gagal mengunduh {resource}: {e}", None
+    
+    try:
+        # Kita hanya perlu inisialisasi VADER di sini untuk memastikan download selesai
+        return None, SentimentIntensityAnalyzer()
+    except Exception as e:
+        return f"Gagal inisialisasi VADER: {e}", None
 
-# --- KONFIGURASI FILE HARDCODED ---
-LABELED_DATA_FILE = 'komentar_labelled_manual.csv' # File untuk TRAINING (Sudah hardcoded)
-PREDICTION_INPUT_FILE = 'komentar_clean_charlie_kirk.csv' # File untuk PREDIKSI MASSAL (BARU di hardcode)
-MODEL_FILE = 'nb_sentiment_model.pkl'
-VECTORIZER_FILE = 'tfidf_vectorizer.pkl'
+error_msg, SIA = setup_nltk_and_vader()
+if error_msg:
+    st.error(error_msg)
+    st.stop()
+
+# Inisialisasi Lemmatizer dan Stopwords Negasi
+lemmatizer = WordNetLemmatizer()
+negation_words = set(['not', 'no', 'never', 'n\'t']) 
+ENGLISH_STOP_WORDS = set(stopwords.words('english')).difference(negation_words)
+
+# Fungsi Pre-processing
+def preprocess_text(text):
+    if not isinstance(text, str) or not text.strip():
+        return ""
+    
+    text = text.strip().strip('"').lower()
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    text = re.sub(r'@\S+', '', text) 
+    text = re.sub(r'\d+', '', text) 
+    text = re.sub(r'[^a-z\s]', ' ', text) 
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    tokens = word_tokenize(text)
+    tokens = [word for word in tokens if word not in ENGLISH_STOP_WORDS and len(word) > 2]
+    tokens = [lemmatizer.lemmatize(word, pos='v') for word in tokens]
+
+    return " ".join(tokens)
 
 
-# --- 2. FUNGSI PREDIKSI DAN VISUALISASI ---
+# --- 2. KONFIGURASI FILE DAN FUNGSI PREDIKSI/VISUALISASI ---
+MODEL_FILE = 'nb_sentiment_vader_model.pkl'
+VECTORIZER_FILE = 'tfidf_vader_vectorizer.pkl'
+PREDICTION_INPUT_FILE = 'komentar_charlie_kirk_death.csv' 
+
 def predict_sentiment(text, model, vectorizer):
-    """Membersihkan teks dan memprediksi sentimen."""
     if not model or not vectorizer:
         return "Model Belum Tersedia. Silakan Latih Model Terlebih Dahulu."
 
-    # Preprocessing teks baru menggunakan fungsi dari preprocessing.py
-    clean_text = preprocessing.preprocess_text(text)
-    
-    # Jika teks bersih kosong, anggap Netral
+    clean_text = preprocess_text(text)
     if not clean_text:
         return "NETRAL (0)"
 
-    # Transformasi teks menggunakan Vectorizer yang sudah dilatih
     text_vector = vectorizer.transform([clean_text])
-
-    # Prediksi
     prediction = model.predict(text_vector)[0]
     
-    # --- PERBAIKAN: MAPPING 5-KELAS UNTUK PREDIKSI TUNGGAL ---
     label_map = {
-        2: "SANGAT POSITIF (2)", 
         1: "POSITIF (1)", 
         0: "NETRAL (0)", 
-        -1: "NEGATIF (-1)", 
-        -2: "SANGAT NEGATIF (-2)"
+        -1: "NEGATIF (-1)" 
     }
     
     return label_map.get(prediction, "LABEL TIDAK DIKENALI")
@@ -65,34 +99,46 @@ def create_sentiment_chart(df):
     fig, ax = plt.subplots(figsize=(6, 6))
     labels = sentiment_counts.index
     sizes = sentiment_counts.values
-    # Tentukan warna yang konsisten
+    
     color_map = {"POSITIF": "#32CD32", "NEGATIF": "#FF4500", "NETRAL": "#ADD8E6"}
-    colors = [color_map.get(label, "#CCCCCC") for label in labels]
+    colors = [color_map.get(label.split()[0], "#CCCCCC") for label in labels]
     
     ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
     ax.axis('equal') 
-    st.pyplot(fig)
+    st.pyplot(fig) 
 
 
-# --- 3. MANAJEMEN SESSION STATE (Memuat Model Saat Startup) ---
+# --- 3. MANAJEMEN SESSION STATE & TAMPILAN ---
+st.set_page_config(
+    page_title="Analisis Sentimen VADER-Based ML",
+    layout="wide"
+)
+
+# Muat model menggunakan fungsi dari vader_labeler.py
 if 'model' not in st.session_state or 'vectorizer' not in st.session_state:
-    st.session_state.model, st.session_state.vectorizer = ml_trainer.load_ml_assets()
+    st.session_state.model, st.session_state.vectorizer = vader_labeler.load_ml_assets()
 
-# --- 4. TAMPILAN SIDEBAR (TEMPAT TRAINING MODEL) ---
+# --- TAMPILAN SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Pengaturan Model")
+    st.header("⚙️ Pengaturan Model (VADER-Based)")
 
-    st.subheader("1. Pelatihan Model")
-    st.markdown(f"**Data Latih:** `{LABELED_DATA_FILE}`")
+    st.subheader("1. Pelatihan Otomatis (VADER)")
+    st.markdown(f"**Data Input:** `{PREDICTION_INPUT_FILE}`")
 
-    if st.button("Latih Model ML"):
-        if not os.path.exists(LABELED_DATA_FILE):
-            st.error(f"File data berlabel '{LABELED_DATA_FILE}' tidak ditemukan!")
+    if st.button("Latih Model ML (Otomatis VADER)"):
+        if not os.path.exists(PREDICTION_INPUT_FILE):
+            st.error(f"File input '{PREDICTION_INPUT_FILE}' tidak ditemukan!")
         else:
-            with st.spinner("Memproses TF-IDF dan Melatih Model Naive Bayes..."):
-                model, vectorizer, metrics = ml_trainer.train_and_evaluate_model(LABELED_DATA_FILE)
+            df_raw = pd.read_csv(PREDICTION_INPUT_FILE)
             
-            if model and vectorizer and metrics:
+            with st.spinner("Memproses VADER Labeling, TF-IDF, dan Melatih Model Naive Bayes..."):
+                # PENTING: Panggil fungsi training dari modul terpisah
+                model, vectorizer, metrics = vader_labeler.vader_label_and_train(
+                    df_raw, 
+                    preprocess_text # Pass fungsi preprocessing lokal
+                )
+            
+            if model and vectorizer and 'Error' not in metrics:
                 st.session_state.model = model
                 st.session_state.vectorizer = vectorizer
                 
@@ -108,6 +154,8 @@ with st.sidebar:
                 st.markdown("---")
                 st.text("Detail Classification Report:")
                 st.code(metrics['Classification_Report'])
+            elif 'Error' in metrics:
+                st.error(f"Pelatihan Gagal: {metrics['Error']}")
             else:
                 st.error("Pelatihan Model Gagal. Cek terminal untuk detail error.")
 
@@ -118,9 +166,11 @@ with st.sidebar:
     else:
         st.warning("Model belum dilatih atau file model tidak ditemukan.")
 
-# --- 5. TAMPILAN UTAMA (PREDIKSI) ---
-st.title("Proyek Klasifikasi Sentimen Komentar (TF-IDF & Naive Bayes)")
-st.markdown("Aplikasi untuk menganalisis sentimen menggunakan model Naive Bayes yang dilatih dengan data berlabel Anda.")
+
+# --- TAMPILAN UTAMA (PREDIKSI) ---
+# ... (Logika Prediksi Teks Tunggal dan Massal tetap sama seperti sebelumnya) ...
+st.title("Proyek Klasifikasi Sentimen VADER-Based ML")
+st.markdown("Model Naive Bayes dilatih secara otomatis menggunakan label VADER untuk prediksi.")
 
 if not st.session_state.model:
     st.error("Model belum dilatih atau tidak ditemukan. Mohon latih model di **sidebar** terlebih dahulu.")
@@ -137,7 +187,7 @@ else:
                 st.session_state.vectorizer
             )
             st.info(f"Hasil Prediksi: **{hasil_prediksi}**")
-            st.caption(f"Teks setelah Preprocessing: `{preprocessing.preprocess_text(input_text)}`")
+            st.caption(f"Teks setelah Preprocessing: `{preprocess_text(input_text)}`")
         else:
             st.error("Kolom input tidak boleh kosong.")
 
@@ -149,7 +199,7 @@ else:
     
     if st.button("Jalankan Prediksi Massal"):
         if not os.path.exists(PREDICTION_INPUT_FILE):
-             st.error(f"Error: File input untuk prediksi '{PREDICTION_INPUT_FILE}' tidak ditemukan. Pastikan file sudah ada.")
+             st.error(f"Error: File input untuk prediksi '{PREDICTION_INPUT_FILE}' tidak ditemukan.")
         else:
             try:
                 df_predict = pd.read_csv(PREDICTION_INPUT_FILE)
@@ -161,38 +211,31 @@ else:
                     st.subheader("Memproses dan Memprediksi...")
                     progress_bar = st.progress(0)
                     
-                    # Preprocessing Massal
-                    df_predict['clean_text'] = df_predict['text'].apply(preprocessing.preprocess_text)
+                    df_predict['clean_text'] = df_predict['text'].apply(preprocess_text)
                     progress_bar.progress(50)
                     
-                    # Lakukan Prediksi Massal
                     text_vectors = st.session_state.vectorizer.transform(df_predict['clean_text'])
                     predictions = st.session_state.model.predict(text_vectors)
                     
-                    # Konversi hasil prediksi ke label teks (menggunakan map)
-                    label_map_5_class = {
-                        2: "SANGAT POSITIF", 
+                    # Konversi hasil prediksi ke label teks (3 kelas VADER)
+                    label_map_3_class = {
                         1: "POSITIF", 
                         0: "NETRAL", 
-                        -1: "NEGATIF", 
-                        -2: "SANGAT NEGATIF"
+                        -1: "NEGATIF" 
                     }
-                    df_predict['sentimen_prediksi'] = pd.Series(predictions).astype(int).map(label_map_5_class)
+                    df_predict['sentimen_prediksi'] = pd.Series(predictions).astype(int).map(label_map_3_class)
                     
                     progress_bar.progress(100)
                     
                     # TAMPILAN HASIL AKHIR DAN VISUALISASI
                     st.header("✨ Hasil Prediksi Sentimen Massal")
                     sentiment_counts = df_predict['sentimen_prediksi'].value_counts()
-    
-                    # Ganti 4 kolom menjadi 5 atau 6 kolom untuk menampilkan -2 dan +2
-                    col_neg2, col_neg1, col_netral, col_pos1, col_pos2 = st.columns(5)
                     
-                    col_neg2.metric("S. Negatif (-2)", sentiment_counts.get("SANGAT NEGATIF", 0))
-                    col_neg1.metric("Negatif (-1)", sentiment_counts.get("NEGATIF", 0))
-                    col_netral.metric("Netral (0)", sentiment_counts.get("NETRAL", 0))
-                    col_pos1.metric("Positif (+1)", sentiment_counts.get("POSITIF", 0))
-                    col_pos2.metric("S. Positif (+2)", sentiment_counts.get("SANGAT POSITIF", 0))
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Komentar", len(df_predict))
+                    col2.metric("Positif", sentiment_counts.get("POSITIF", 0))
+                    col3.metric("Negatif", sentiment_counts.get("NEGATIF", 0))
+                    col4.metric("Netral", sentiment_counts.get("NETRAL", 0))
 
                     st.subheader("Distribusi Sentimen (Visualisasi)")
                     create_sentiment_chart(df_predict)
@@ -211,4 +254,4 @@ else:
                     
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat memproses file: {e}")
-                st.exception(e) # Menampilkan detail traceback untuk debug
+                st.exception(e)
