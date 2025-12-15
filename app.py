@@ -47,9 +47,16 @@ def predict_sentiment(text, model, vectorizer):
     # Prediksi
     prediction = model.predict(text_vector)[0]
     
-    # Konversi label numerik ke teks
-    # Menggunakan skala 1, 0, -1
-    return {1: "POSITIF (1)", -1: "NEGATIF (-1)", 0: "NETRAL (0)"}.get(prediction, "NETRAL (0)")
+    # --- PERBAIKAN: MAPPING 5-KELAS UNTUK PREDIKSI TUNGGAL ---
+    label_map = {
+        2: "SANGAT POSITIF (2)", 
+        1: "POSITIF (1)", 
+        0: "NETRAL (0)", 
+        -1: "NEGATIF (-1)", 
+        -2: "SANGAT NEGATIF (-2)"
+    }
+    
+    return label_map.get(prediction, "LABEL TIDAK DIKENALI")
 
 def create_sentiment_chart(df):
     """Membuat dan menampilkan Pie Chart distribusi sentimen."""
@@ -163,20 +170,29 @@ else:
                     predictions = st.session_state.model.predict(text_vectors)
                     
                     # Konversi hasil prediksi ke label teks (menggunakan map)
-                    label_map = {1: "POSITIF", -1: "NEGATIF", 0: "NETRAL"}
-                    df_predict['sentimen_prediksi'] = pd.Series(predictions).astype(int).map(label_map)
+                    label_map_5_class = {
+                        2: "SANGAT POSITIF", 
+                        1: "POSITIF", 
+                        0: "NETRAL", 
+                        -1: "NEGATIF", 
+                        -2: "SANGAT NEGATIF"
+                    }
+                    df_predict['sentimen_prediksi'] = pd.Series(predictions).astype(int).map(label_map_5_class)
                     
                     progress_bar.progress(100)
                     
                     # TAMPILAN HASIL AKHIR DAN VISUALISASI
                     st.header("✨ Hasil Prediksi Sentimen Massal")
                     sentiment_counts = df_predict['sentimen_prediksi'].value_counts()
-                    col1, col2, col3, col4 = st.columns(4)
+    
+                    # Ganti 4 kolom menjadi 5 atau 6 kolom untuk menampilkan -2 dan +2
+                    col_neg2, col_neg1, col_netral, col_pos1, col_pos2 = st.columns(5)
                     
-                    col1.metric("Total Komentar", len(df_predict))
-                    col2.metric("Positif", sentiment_counts.get("POSITIF", 0))
-                    col3.metric("Negatif", sentiment_counts.get("NEGATIF", 0))
-                    col4.metric("Netral", sentiment_counts.get("NETRAL", 0))
+                    col_neg2.metric("S. Negatif (-2)", sentiment_counts.get("SANGAT NEGATIF", 0))
+                    col_neg1.metric("Negatif (-1)", sentiment_counts.get("NEGATIF", 0))
+                    col_netral.metric("Netral (0)", sentiment_counts.get("NETRAL", 0))
+                    col_pos1.metric("Positif (+1)", sentiment_counts.get("POSITIF", 0))
+                    col_pos2.metric("S. Positif (+2)", sentiment_counts.get("SANGAT POSITIF", 0))
 
                     st.subheader("Distribusi Sentimen (Visualisasi)")
                     create_sentiment_chart(df_predict)
