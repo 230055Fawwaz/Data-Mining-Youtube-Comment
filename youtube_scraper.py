@@ -3,7 +3,7 @@ import pandas as pd
 import sys
 
 # --- Konfigurasi Yotube ---
-API_KEY = "" 
+API_KEY = "Masukkan_Kunci_API_Anda" 
 VIDEO_ID = "9WquMr6mBCs"
 MAX_COMMENTS = 500 
 
