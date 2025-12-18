@@ -6,7 +6,7 @@ from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 
-# --- PERBAIKAN 1: PENANGANAN DOWNLOAD NLTK ---
+# --- PENANGANAN DOWNLOAD NLTK ---
 # Menggunakan LookupError untuk NLTK v3.x ke atas
 try:
     nltk.data.find('tokenizers/punkt')
@@ -22,7 +22,7 @@ except LookupError:
     nltk.download('wordnet')
 
 
-# --- PERBAIKAN 2: CUSTOM STOPWORDS (Menjaga Kata Negasi) ---
+# --- CUSTOM STOPWORDS ---
 # Daftar kata yang TIDAK boleh dihapus (negasi, yang penting untuk sentimen)
 negation_words = set(['not', 'no', 'never', 'n\'t']) 
 english_stop_words = set(stopwords.words('english')).difference(negation_words)
@@ -31,7 +31,7 @@ english_stop_words = set(stopwords.words('english')).difference(negation_words)
 # Inisialisasi Lemmatizer dan Stemmer di luar fungsi untuk efisiensi
 lemmatizer = WordNetLemmatizer()
 factory = StemmerFactory()
-id_stemmer = factory.create_stemmer() # Tetap ada untuk jaga-jaga (Bhs Indonesia)
+id_stemmer = factory.create_stemmer() # Jaga-jaga jika ada Bahasa Indonesia
 
 # --- FUNGSI PRE-PROCESSING UTAMA ---
 def preprocess_text(text):
@@ -42,7 +42,7 @@ def preprocess_text(text):
     # 1. Penanganan Data Mentah (Hapus karakter di awal/akhir)
     text = text.strip().strip('"') 
 
-    # 2. Case Folding
+    # 2. Case Folding (lowercase semua)
     text = text.lower()
     
     # 3. Penanganan Karakter Khusus, Non-ASCII, dan Unicode Rusak
@@ -53,7 +53,7 @@ def preprocess_text(text):
     text = re.sub(r'\d+', '', text) 
     
     # 5. Hapus Punctuation & Simbol
-    # Hanya pertahankan huruf, spasi, dan tanda penting (opsional)
+    # Hanya pertahankan huruf, spasi, dan tanda penting
     text = re.sub(r'[^a-z\s]', ' ', text) 
     
     # Hapus spasi berulang
@@ -62,21 +62,18 @@ def preprocess_text(text):
     # 6. Tokenizing
     tokens = word_tokenize(text)
     
-    # 7. Stopword Removal (Menggunakan custom_stopwords yang menjaga negasi)
+    # 7. Stopword Removal (Menggunakan custom_stopwords di atas yang menjaga negasi)
     tokens = [word for word in tokens if word not in english_stop_words and len(word) > 2]
     
     # 8. Lemmatization (Mengurangi kata ke bentuk dasar yang valid)
     # Gunakan pos='v' (verb) agar lebih efektif mengubah bentuk V2/V3 ke V1
-    # PERBAIKAN 3: Memastikan Lemmatizer hanya dipanggil sekali
     tokens = [lemmatizer.lemmatize(word, pos='v') for word in tokens]
 
-    # PERBAIKAN 4: Mengembalikan tokens yang SUDAH dilemmatisasi
+    # Mengembalikan tokens yang SUDAH dilemmatisasi
     return " ".join(tokens)
 
 # --- FUNGSI UTAMA UNTUK MENGOLAH FILE ---
 def run_preprocessing(input_file='komentar_charlie_kirk_death.csv', output_file='komentar_clean_charlie_kirk.csv'):
-    # ... (BLOK KODE INI TETAP SAMA, KARENA FOKUS PERBAIKAN PADA FUNGSI UTAMA) ...
-    # Saya hanya menampilkan ulang bagian bawah agar file tetap lengkap
     try:
         df = pd.read_csv(input_file)
         
@@ -109,3 +106,4 @@ def run_preprocessing(input_file='komentar_charlie_kirk_death.csv', output_file=
 # --- Eksekusi Program ---
 if __name__ == "__main__":
     run_preprocessing(input_file='komentar_charlie_kirk_death.csv', output_file='komentar_clean_charlie_kirk.csv')
+    print("Data bersih telah disimpan ke 'komentar_clean_charlie_kirk.csv' dalam format CSV.")

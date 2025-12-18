@@ -2,14 +2,12 @@ import googleapiclient.discovery
 import pandas as pd
 import sys
 
-# --- Konfigurasi Anda ---
-# GANTI DENGAN KUNCI API YANG SUDAH ANDA SALIN DI LANGKAH 1
-
-# ID Video (KOMPAS.TV) tentang penangkapan Gubernur Riau
+# --- Konfigurasi Yotube ---
+API_KEY = "" 
 VIDEO_ID = "9WquMr6mBCs"
 MAX_COMMENTS = 500 
 
-# https://www.youtube.com/watch?v=TQ8i8_dktEM
+# --- Link Video Yotube (kalau mau) ---
 # https://www.youtube.com/watch?v=9WquMr6mBCs
 
 # Inisialisasi Layanan YouTube API
@@ -81,4 +79,4 @@ print(f"\nSelesai! Berhasil mengambil {len(df_final)} komentar.")
 
 # Simpan ke file CSV
 df_final.to_csv('komentar_charlie_kirk_death.csv', index=False, encoding='utf-8')
-print("Data telah disimpan ke 'komentar_youtube_korupsi_riau.csv' dalam format CSV.")
+print("Data telah disimpan ke 'komentar_charlie_kirk_death.csv' dalam format CSV.")

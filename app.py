@@ -3,15 +3,16 @@ import pandas as pd
 import os
 import joblib
 import matplotlib.pyplot as plt 
+import seaborn as sns # Diperlukan untuk Bar Chart
 import sys
 import re
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
-from nltk.sentiment.vader import SentimentIntensityAnalyzer # Diperlukan untuk setup SIA
+from nltk.sentiment.vader import SentimentIntensityAnalyzer 
 
-# --- IMPORT MODUL CUSTOM (BARU) ---
+# --- IMPORT MODUL CUSTOM (vader_labeler.py HARUS ADA DI DIREKTORI YANG SAMA) ---
 try:
     import vader_labeler
 except ImportError as e:
@@ -34,7 +35,6 @@ def setup_nltk_and_vader():
                 return f"Gagal mengunduh {resource}: {e}", None
     
     try:
-        # Kita hanya perlu inisialisasi VADER di sini untuk memastikan download selesai
         return None, SentimentIntensityAnalyzer()
     except Exception as e:
         return f"Gagal inisialisasi VADER: {e}", None
@@ -71,8 +71,9 @@ def preprocess_text(text):
 # --- 2. KONFIGURASI FILE DAN FUNGSI PREDIKSI/VISUALISASI ---
 MODEL_FILE = 'nb_sentiment_vader_model.pkl'
 VECTORIZER_FILE = 'tfidf_vader_vectorizer.pkl'
-PREDICTION_INPUT_FILE = 'komentar_charlie_kirk_death.csv' 
+PREDICTION_INPUT_FILE = 'komentar_charlie_kirk_death' 
 
+# Fungsi Prediksi
 def predict_sentiment(text, model, vectorizer):
     if not model or not vectorizer:
         return "Model Belum Tersedia. Silakan Latih Model Terlebih Dahulu."
@@ -92,20 +93,83 @@ def predict_sentiment(text, model, vectorizer):
     
     return label_map.get(prediction, "LABEL TIDAK DIKENALI")
 
-def create_sentiment_chart(df):
-    """Membuat dan menampilkan Pie Chart distribusi sentimen."""
+# --- FUNGSI VISUALISASI GRAFIK ---
+
+# Fungsi 1: Pie Chart (Persentase NB)
+def create_nb_pie_chart(df):
+    """Membuat dan menampilkan Pie Chart distribusi sentimen prediksi NB."""
     sentiment_counts = df['sentimen_prediksi'].value_counts()
     
-    fig, ax = plt.subplots(figsize=(6, 6))
+    fig, ax = plt.subplots(figsize=(6, 6)) # Ukuran Pie Chart
     labels = sentiment_counts.index
     sizes = sentiment_counts.values
     
     color_map = {"POSITIF": "#32CD32", "NEGATIF": "#FF4500", "NETRAL": "#ADD8E6"}
-    colors = [color_map.get(label.split()[0], "#CCCCCC") for label in labels]
+    colors = [color_map.get(label.split()[0], "#CCCCCC") for label in labels] 
     
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors, wedgeprops={'edgecolor': 'black'})
     ax.axis('equal') 
-    st.pyplot(fig) 
+    ax.set_title('Persentase Sentimen Naive Bayes')
+    return fig
+
+# Fungsi 2: Bar Chart NB (Hitungan)
+def create_nb_bar_chart(df):
+    """Membuat Bar Chart Sentimen Prediksi NB (Fig. 2 Style)."""
+    sentiment_counts = df['sentimen_prediksi'].value_counts().reindex(['NEGATIF', 'NETRAL', 'POSITIF'], fill_value=0)
+    total = sentiment_counts.sum()
+    
+    fig, ax = plt.subplots(figsize=(8, 5)) 
+    
+    # Warna sesuai Fig. 2 (Merah Bata, Abu-abu, Hijau Tua)
+    color_map = {'POSITIF': '#2ca02c', 'NETRAL': '#949494', 'NEGATIF': '#d62728'} 
+    colors = [color_map[label] for label in sentiment_counts.index]
+    
+    sns.barplot(x=sentiment_counts.index, y=sentiment_counts.values, ax=ax, palette=colors)
+    
+    ax.set_title('Sentiment Distribution of YouTube Comments (NB Predicted)')
+    ax.set_ylabel('Number of Comments')
+    ax.set_xlabel('Sentiment Category')
+    
+    # Tambahkan nilai (Count dan Persentase) di atas setiap bar
+    for p in ax.patches:
+        height = p.get_height()
+        percentage = f'({(height/total)*100:.1f}%)'
+        ax.annotate(f'{int(height)}\n{percentage}', 
+                   (p.get_x() + p.get_width() / 2., height), 
+                   ha='center', va='center', 
+                   xytext=(0, 10), 
+                   textcoords='offset points',
+                   fontsize=10, fontweight='bold')
+        
+    ax.set_ylim(0, max(sentiment_counts.values) * 1.15) 
+
+    return fig
+
+# Fungsi 3: Histogram VADER (Distribusi Score)
+def create_vader_histogram(df):
+    """Membuat Histogram Distribusi Compound Score VADER (Fig. 3 Style)."""
+    
+    if 'vader_score' not in df.columns:
+        # Ini seharusnya sudah dihitung di prediksi massal, tapi sebagai fallback
+        SIA = nltk.sentiment.vader.SentimentIntensityAnalyzer()
+        df['vader_score'] = df['clean_text'].apply(lambda x: SIA.polarity_scores(x)['compound'])
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Gunakan sns.histplot dengan KDE untuk mereplikasi tampilan (Fig. 3)
+    sns.histplot(df['vader_score'], bins=20, kde=True, ax=ax, color='skyblue', edgecolor='black')
+    
+    # Tambahkan garis threshold
+    ax.axvline(x=0.05, color='green', linestyle='--', label='Positive Threshold (0.05)')
+    ax.axvline(x=-0.05, color='red', linestyle='--', label='Negative Threshold (-0.05)')
+    
+    ax.set_title('Distribution of VADER Compound Sentiment Scores')
+    ax.set_xlabel('Compound Score')
+    ax.set_ylabel('Frequency') 
+    ax.legend()
+    ax.set_xlim(-1.0, 1.0) 
+
+    return fig
 
 
 # --- 3. MANAJEMEN SESSION STATE & TAMPILAN ---
@@ -132,10 +196,9 @@ with st.sidebar:
             df_raw = pd.read_csv(PREDICTION_INPUT_FILE)
             
             with st.spinner("Memproses VADER Labeling, TF-IDF, dan Melatih Model Naive Bayes..."):
-                # PENTING: Panggil fungsi training dari modul terpisah
                 model, vectorizer, metrics = vader_labeler.vader_label_and_train(
                     df_raw, 
-                    preprocess_text # Pass fungsi preprocessing lokal
+                    preprocess_text 
                 )
             
             if model and vectorizer and 'Error' not in metrics:
@@ -168,7 +231,6 @@ with st.sidebar:
 
 
 # --- TAMPILAN UTAMA (PREDIKSI) ---
-# ... (Logika Prediksi Teks Tunggal dan Massal tetap sama seperti sebelumnya) ...
 st.title("Proyek Klasifikasi Sentimen VADER-Based ML")
 st.markdown("Model Naive Bayes dilatih secara otomatis menggunakan label VADER untuk prediksi.")
 
@@ -212,36 +274,60 @@ else:
                     progress_bar = st.progress(0)
                     
                     df_predict['clean_text'] = df_predict['text'].apply(preprocess_text)
-                    progress_bar.progress(50)
+                    progress_bar.progress(30)
                     
+                    # 1. Lakukan Prediksi Naive Bayes
                     text_vectors = st.session_state.vectorizer.transform(df_predict['clean_text'])
                     predictions = st.session_state.model.predict(text_vectors)
                     
-                    # Konversi hasil prediksi ke label teks (3 kelas VADER)
-                    label_map_3_class = {
-                        1: "POSITIF", 
-                        0: "NETRAL", 
-                        -1: "NEGATIF" 
-                    }
+                    label_map_3_class = {1: "POSITIF", 0: "NETRAL", -1: "NEGATIF"}
                     df_predict['sentimen_prediksi'] = pd.Series(predictions).astype(int).map(label_map_3_class)
                     
-                    progress_bar.progress(100)
+                    progress_bar.progress(60)
+
+                    # 2. HITUNG VADER COMPOUND SCORE UNTUK CHART KETIGA
+                    df_predict['vader_score'] = df_predict['clean_text'].apply(lambda x: SIA.polarity_scores(x)['compound'])
                     
-                    # TAMPILAN HASIL AKHIR DAN VISUALISASI
+                    progress_bar.progress(80)
+                    
+                    # --- TAMPILAN HASIL AKHIR DAN VISUALISASI ---
                     st.header("✨ Hasil Prediksi Sentimen Massal")
                     sentiment_counts = df_predict['sentimen_prediksi'].value_counts()
                     
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Total Komentar", len(df_predict))
-                    col2.metric("Positif", sentiment_counts.get("POSITIF", 0))
-                    col3.metric("Negatif", sentiment_counts.get("NEGATIF", 0))
-                    col4.metric("Netral", sentiment_counts.get("NETRAL", 0))
+                    col2.metric("Positif (NB)", sentiment_counts.get("POSITIF", 0))
+                    col3.metric("Negatif (NB)", sentiment_counts.get("NEGATIF", 0))
+                    col4.metric("Netral (NB)", sentiment_counts.get("NETRAL", 0))
 
-                    st.subheader("Distribusi Sentimen (Visualisasi)")
-                    create_sentiment_chart(df_predict)
+                    st.subheader("Visualisasi Sentimen")
+                    
+                    # SUSUNAN GRAFIK: PIE dan BAR NB berdampingan
+                    col_pie, col_bar_nb = st.columns([1, 2])
+                    
+                    with col_pie:
+                        st.markdown("##### 1. Ringkasan Persentase (NB Predicted)")
+                        fig_pie = create_nb_pie_chart(df_predict)
+                        st.pyplot(fig_pie)
+                        
+                    with col_bar_nb:
+                        st.markdown("##### 2. Distribusi Hitungan (NB Predicted)")
+                        fig_bar_nb = create_nb_bar_chart(df_predict)
+                        st.pyplot(fig_bar_nb)
+                    
+                    st.markdown("---")
+                    
+                    # --- CHART 3: DISTRIBUSI VADER COMPOUND SCORE ---
+                    st.markdown("##### 3. Distribusi VADER Compound Score (Linguistik)")
+                    
+                    # Plot Histogram VADER (Mereplikasi Fig. 3)
+                    fig_vader_hist = create_vader_histogram(df_predict)
+                    st.pyplot(fig_vader_hist)
+
+                    progress_bar.progress(100)
                     
                     st.subheader("Sampel Data (20 Baris Teratas)")
-                    st.dataframe(df_predict[['text', 'sentimen_prediksi']].head(20))
+                    st.dataframe(df_predict[['text', 'sentimen_prediksi', 'vader_score']].head(20))
                     
                     # Tombol Download
                     csv_output = df_predict.to_csv(index=False).encode('utf-8')

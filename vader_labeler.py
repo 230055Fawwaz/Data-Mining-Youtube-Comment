@@ -12,7 +12,6 @@ MODEL_FILE = 'nb_sentiment_vader_model.pkl'
 VECTORIZER_FILE = 'tfidf_vader_vectorizer.pkl'
 
 # --- INISIALISASI VADER ---
-# Kita asumsikan ini sudah diinisialisasi oleh app.py, tapi kita inisialisasi lagi di sini
 # untuk memastikan SIA tersedia jika diimport.
 try:
     SIA = SentimentIntensityAnalyzer()
